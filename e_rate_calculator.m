@@ -1,7 +1,12 @@
 % Calculator for catchment average denudation rates. Denundation rates are
 % calculated pixel-by-pixel and then averaged. 
-% Uncertaintties are propagated following a Monte Carlo approach.
+% Uncertaintties are propagated following a Monte Carlo approach and
+% include uncertainties on production rate and scaling model.
 % Ignores decay (for now)
+% Calculates the attenuation length for spallation following CRONUS and
+% Sato (2008) with a dependency on time and air-pressure (for standard
+% samples I use a rigidity cutoff of 4, CHECK BEFORE PUBLICATION)
+%
 % Input: - x,y of sampling location in lat, lon
 %        - nuclide concentration and uncertainty
 % Output: denudation rate with uncertainty in mm/a
@@ -82,7 +87,7 @@ d = [7.4260e-5,7.9457e-5,9.4508e-5, 1.1752e-4,1.5463e-4,1.9391e-4,2.0127e-4,2.01
 e = [-2.2397e-8,-2.3697e-8,-2.8234e-8,-3.8809e-8,-5.0330e-8,-6.3653e-8,-6.6043e-8,-6.6043e-8];
 m = [0.587,0.600,0.678,0.833,0.933,1.000,1.000,1.000];
 
-[P,lambda,decayL]=constants_RO_exp_muons(nuclide);    % get constants for production and attenuation, and radioactive decay
+[P,lambda,decayL,rigiditycutoff]=constants_RO_exp_muons(nuclide);    % get constants for production and attenuation, and radioactive decay
 
 %% CALCULATE EROSION RATES ------------------------------------------------
 % -------------------------------------------------------------------------
@@ -115,7 +120,7 @@ for i = 1:nBasins
     pres=1013.25*exp(((-0.03417)/6.5e-3)*(log(288.15)-log(288.15-(6.5e-3*Basin.Z)))); 
     
     % calculate mean production
-    [Pn,Pmf,Pms] = mean_production_catchment(Basin,0,P,lambda,A,B,C,D,Es,pres);
+    [Pn,Pmf,Pms,Leff] = mean_production_catchment(Basin,0,P,lambda,A,B,C,D,Es,pres,rigiditycutoff);
     
     %% Calculate MC erosion rates
     
@@ -133,7 +138,7 @@ for i = 1:nBasins
     Pmf_rand=truncnormrnd(nMC,Pmf,PmfStd,0,inf);       % random mf prod rate
     
     samples = nan(nMC,1);
-    muN = density/lambda.Ln; muMs = density/lambda.Lms; muMf = density/lambda.Lmf;
+    muN = density/Leff; muMs = density/lambda.Lms; muMf = density/lambda.Lmf;
     for j = 1:nMC
         if C_rand(j)~=0
             samples(j) = (1/C_rand(j))*((Pn_rand(j)/muN)+(Pms_rand(j)/muMs)+(Pmf_rand(j)/muMf));  % E in cm/a

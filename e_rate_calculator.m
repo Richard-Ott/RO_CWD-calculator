@@ -4,8 +4,12 @@
 % include uncertainties on production rate and scaling model.
 % Ignores decay (for now)
 % Calculates the attenuation length for spallation following CRONUS and
-% Sato (2008) with a dependency on time and air-pressure (for standard
-% samples I use a rigidity cutoff of 4, CHECK BEFORE PUBLICATION)
+% Sato (2008) with a dependency on time and air-pressure.
+% Magnetic time evolution parameters for neutron attenuation length 
+% calculation are from CRONUS 2.0 (Marrero, 2016).
+
+% Muon attenuation lengths are assumed to be exponential, which is ok for
+% medium to high erosion rates (Balco, 2017).
 %
 % Input: - x,y of sampling location in lat, lon
 %        - nuclide concentration and uncertainty
@@ -87,7 +91,7 @@ d = [7.4260e-5,7.9457e-5,9.4508e-5, 1.1752e-4,1.5463e-4,1.9391e-4,2.0127e-4,2.01
 e = [-2.2397e-8,-2.3697e-8,-2.8234e-8,-3.8809e-8,-5.0330e-8,-6.3653e-8,-6.6043e-8,-6.6043e-8];
 m = [0.587,0.600,0.678,0.833,0.933,1.000,1.000,1.000];
 
-[P,lambda,decayL,rigiditycutoff]=constants_RO_exp_muons(nuclide);    % get constants for production and attenuation, and radioactive decay
+[P,lambda,decayL]=constants_RO_exp_muons(nuclide);    % get constants for production and attenuation, and radioactive decay
 
 %% CALCULATE EROSION RATES ------------------------------------------------
 % -------------------------------------------------------------------------
@@ -100,6 +104,8 @@ E_Med      = zeros(nBasins,1);        % median simluated rates
 E_UpQuant  = zeros(nBasins,1);        % the quantiles are set to mimik a stdanard deviation (0.83 & 0.17)
 E_LowQuant = zeros(nBasins,1);
 
+
+wb = waitbar(0,'Calculating basin erosion rates...');
 for i = 1:nBasins
     % extract basins DEM
     Basin = DEM*nan;
@@ -119,8 +125,11 @@ for i = 1:nBasins
     % Perform air pressure correction for elevation (Eq. 1 from Stone, 2000)to account for diminished cosmic ray attenuation with decreased atmospheric pressue 
     pres=1013.25*exp(((-0.03417)/6.5e-3)*(log(288.15)-log(288.15-(6.5e-3*Basin.Z)))); 
     
+    % calculate effective neutron attenuation length for this basin
+    lambda.Ln = neutron_att_length_DEM(Basin,utmzone);
+    
     % calculate mean production
-    [Pn,Pmf,Pms,Leff] = mean_production_catchment(Basin,0,P,lambda,A,B,C,D,Es,pres,rigiditycutoff);
+    [Pn,Pmf,Pms] = mean_production_catchment(Basin,0,P,lambda,A,B,C,D,Es,pres);
     
     %% Calculate MC erosion rates
     
@@ -138,7 +147,7 @@ for i = 1:nBasins
     Pmf_rand=truncnormrnd(nMC,Pmf,PmfStd,0,inf);       % random mf prod rate
     
     samples = nan(nMC,1);
-    muN = density/Leff; muMs = density/lambda.Lms; muMf = density/lambda.Lmf;
+    muN = density/lambda.Ln; muMs = density/lambda.Lms; muMf = density/lambda.Lmf;
     for j = 1:nMC
         if C_rand(j)~=0
             samples(j) = (1/C_rand(j))*((Pn_rand(j)/muN)+(Pms_rand(j)/muMs)+(Pmf_rand(j)/muMf));  % E in cm/a
@@ -153,7 +162,10 @@ for i = 1:nBasins
     E_UpQuant(i)  = quantile(samples,0.83);        
     E_LowQuant(i) = quantile(samples,0.17);    
     
+    
+    waitbar(i/nBasins,wb)
 end
+close(wb)
 
 % rough estimate of integration time-scale only reliant on spallation in yrs
 TimeScale=round(1./(muN*(E/10)));
